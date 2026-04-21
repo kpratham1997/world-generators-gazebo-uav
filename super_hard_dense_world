@@ -1,0 +1,189 @@
+python3 - << 'EOF' > structured_complex_world.sdf
+import random
+
+# CONFIG
+AREA_SIZE = 30
+NUM_ROOMS = 6
+WALL_THICKNESS = 0.3
+WALL_HEIGHT = 3.0
+MIN_ROOM_SIZE = 4
+MAX_ROOM_SIZE = 10
+DOOR_SIZE = 1.5
+SAFE_ZONE = 2.5   # <-- protects spawn at (0,0)
+
+walls = []
+
+# -------------------------------
+# SAFE ZONE CHECKS
+# -------------------------------
+def intersects_safe_zone(x, y, sx, sy):
+    wx_min = x - sx/2
+    wx_max = x + sx/2
+    wy_min = y - sy/2
+    wy_max = y + sy/2
+
+    sz_min = -SAFE_ZONE
+    sz_max = SAFE_ZONE
+
+    return not (
+        wx_max < sz_min or wx_min > sz_max or
+        wy_max < sz_min or wy_min > sz_max
+    )
+
+def add_wall(x, y, sx, sy):
+    if not intersects_safe_zone(x, y, sx, sy):
+        walls.append((x, y, sx, sy))
+
+def room_valid(x, y, w, h):
+    rx_min = x - w/2
+    rx_max = x + w/2
+    ry_min = y - h/2
+    ry_max = y + h/2
+
+    sz_min = -SAFE_ZONE
+    sz_max = SAFE_ZONE
+
+    return (
+        rx_max < sz_min or rx_min > sz_max or
+        ry_max < sz_min or ry_min > sz_max
+    )
+
+# -------------------------------
+# WORLD GENERATION
+# -------------------------------
+half = AREA_SIZE / 2
+
+# Outer boundary
+add_wall(0, -half, AREA_SIZE, WALL_THICKNESS)
+add_wall(0, half, AREA_SIZE, WALL_THICKNESS)
+add_wall(-half, 0, WALL_THICKNESS, AREA_SIZE)
+add_wall(half, 0, WALL_THICKNESS, AREA_SIZE)
+
+# Rooms
+rooms = []
+
+for _ in range(NUM_ROOMS):
+    for _ in range(100):  # retry to avoid safe zone
+        w = random.uniform(MIN_ROOM_SIZE, MAX_ROOM_SIZE)
+        h = random.uniform(MIN_ROOM_SIZE, MAX_ROOM_SIZE)
+
+        x = random.uniform(-half + w/2, half - w/2)
+        y = random.uniform(-half + h/2, half - h/2)
+
+        if room_valid(x, y, w, h):
+            rooms.append((x, y, w, h))
+            break
+
+# Build room walls
+for (x, y, w, h) in rooms:
+    add_wall(x, y - h/2, w, WALL_THICKNESS)  # bottom
+    add_wall(x, y + h/2, w, WALL_THICKNESS)  # top
+    add_wall(x - w/2, y, WALL_THICKNESS, h)  # left
+    add_wall(x + w/2, y, WALL_THICKNESS, h)  # right
+
+# Corridors
+for i in range(len(rooms) - 1):
+    x1, y1, _, _ = rooms[i]
+    x2, y2, _, _ = rooms[i + 1]
+
+    # Horizontal corridor
+    cx = (x1 + x2) / 2
+    cy = y1
+    length = abs(x2 - x1)
+
+    add_wall(cx, cy - DOOR_SIZE, length, WALL_THICKNESS)
+    add_wall(cx, cy + DOOR_SIZE, length, WALL_THICKNESS)
+
+    # Vertical corridor
+    cx = x2
+    cy = (y1 + y2) / 2
+    length = abs(y2 - y1)
+
+    add_wall(cx - DOOR_SIZE, cy, WALL_THICKNESS, length)
+    add_wall(cx + DOOR_SIZE, cy, WALL_THICKNESS, length)
+
+# -------------------------------
+# SDF OUTPUT (UNCHANGED CORE)
+# -------------------------------
+print('<?xml version="1.0" encoding="UTF-8"?>')
+print('<sdf version="1.9">')
+print('  <world name="structured_complex_world">')
+
+print(f'    <!-- {len(walls)} walls generated -->')
+
+print('''
+    <physics type="ode">
+        <max_step_size>0.004</max_step_size>
+        <real_time_factor>1.0</real_time_factor>
+        <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+
+    <gravity>0 0 -9.8</gravity>
+
+    <!-- REQUIRED FOR PX4 -->
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+
+    <!-- REQUIRED FOR GPS / EKF -->
+    <spherical_coordinates>
+        <surface_model>EARTH_WGS84</surface_model>
+        <world_frame_orientation>ENU</world_frame_orientation>
+        <latitude_deg>47.397971057728974</latitude_deg>
+        <longitude_deg>8.546163739800146</longitude_deg>
+        <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <scene>
+        <ambient>0.5 0.5 0.5 1</ambient>
+        <background>0.7 0.85 1.0 1</background>
+    </scene>
+''')
+
+# Ground
+print('''
+    <model name="ground_plane">
+        <static>true</static>
+        <link name="link">
+            <collision name="collision">
+                <geometry>
+                    <plane>
+                        <normal>0 0 1</normal>
+                        <size>200 200</size>
+                    </plane>
+                </geometry>
+            </collision>
+        </link>
+    </model>
+''')
+
+# Walls
+for i, (x, y, sx, sy) in enumerate(walls):
+    print(f'''
+    <model name="wall_{i}">
+        <static>true</static>
+        <pose>{x:.2f} {y:.2f} {WALL_HEIGHT/2} 0 0 0</pose>
+        <link name="link">
+            <collision name="collision">
+                <geometry>
+                    <box>
+                        <size>{sx:.2f} {sy:.2f} {WALL_HEIGHT}</size>
+                    </box>
+                </geometry>
+            </collision>
+            <visual name="visual">
+                <geometry>
+                    <box>
+                        <size>{sx:.2f} {sy:.2f} {WALL_HEIGHT}</size>
+                    </box>
+                </geometry>
+                <material>
+                    <ambient>0.2 0.2 0.2 1</ambient>
+                    <diffuse>0.3 0.3 0.3 1</diffuse>
+                </material>
+            </visual>
+        </link>
+    </model>
+''')
+
+print('  </world>')
+print('</sdf>')
+EOF
