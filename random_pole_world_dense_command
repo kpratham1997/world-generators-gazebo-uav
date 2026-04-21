@@ -1,0 +1,144 @@
+python3 - << 'EOF' > random_pole_world_dense.sdf
+import random
+import math
+
+# CONFIG (DENSE)
+NUM_POLES = 120
+AREA_MIN = -15
+AREA_MAX = 15
+MIN_DIST = 0.9
+SAFE_ZONE = 2.0
+MAX_ATTEMPTS = 100000
+
+positions = []
+
+def is_valid(x, y):
+    # keep center free (for drone spawn)
+    if abs(x) < SAFE_ZONE and abs(y) < SAFE_ZONE:
+        return False
+
+    for px, py in positions:
+        if math.hypot(x - px, y - py) < MIN_DIST:
+            return False
+    return True
+
+# Generate positions
+attempts = 0
+while len(positions) < NUM_POLES and attempts < MAX_ATTEMPTS:
+    x = random.uniform(AREA_MIN, AREA_MAX)
+    y = random.uniform(AREA_MIN, AREA_MAX)
+
+    if is_valid(x, y):
+        positions.append((x, y))
+
+    attempts += 1
+
+# SDF START (FIXED ORDER)
+print('<?xml version="1.0" encoding="UTF-8"?>')
+print('<sdf version="1.9">')
+print('  <world name="random_pole_world_dense">')
+
+# Safe debug comment (NOW VALID POSITION)
+print(f'    <!-- Generated {len(positions)} poles after {attempts} attempts -->')
+
+# Physics + Environment + PX4 REQUIRED
+print('''
+    <physics type="ode">
+        <max_step_size>0.004</max_step_size>
+        <real_time_factor>1.0</real_time_factor>
+        <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+
+    <gravity>0 0 -9.8</gravity>
+
+    <!-- REQUIRED FOR PX4 -->
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+
+    <!-- REQUIRED FOR GPS / EKF -->
+    <spherical_coordinates>
+        <surface_model>EARTH_WGS84</surface_model>
+        <world_frame_orientation>ENU</world_frame_orientation>
+        <latitude_deg>47.397971057728974</latitude_deg>
+        <longitude_deg>8.546163739800146</longitude_deg>
+        <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <scene>
+        <grid>true</grid>
+        <ambient>0.5 0.5 0.5 1</ambient>
+        <background>0.7 0.85 1.0 1</background>
+        <shadows>true</shadows>
+    </scene>
+
+    <light name="sun" type="directional">
+        <pose>0 0 500 0 0 0</pose>
+        <cast_shadows>true</cast_shadows>
+        <intensity>1</intensity>
+        <direction>-0.5 0.5 -1</direction>
+    </light>
+''')
+
+# Ground
+print('''
+    <model name="ground_plane">
+        <static>true</static>
+        <link name="link">
+            <collision name="collision">
+                <geometry>
+                    <plane>
+                        <normal>0 0 1</normal>
+                        <size>500 500</size>
+                    </plane>
+                </geometry>
+            </collision>
+            <visual name="visual">
+                <geometry>
+                    <plane>
+                        <normal>0 0 1</normal>
+                        <size>500 500</size>
+                    </plane>
+                </geometry>
+                <material>
+                    <ambient>0.8 0.8 0.8 1</ambient>
+                    <diffuse>0.8 0.8 0.8 1</diffuse>
+                    <specular>0.2 0.2 0.2 1</specular>
+                </material>
+            </visual>
+        </link>
+    </model>
+''')
+
+# Poles (RANDOM DENSE)
+for i, (x, y) in enumerate(positions):
+    print(f'''
+    <model name="pole_{i}">
+        <static>true</static>
+        <pose>{x:.2f} {y:.2f} 1.5 0 0 0</pose>
+        <link name="link">
+            <collision name="collision">
+                <geometry>
+                    <cylinder>
+                        <radius>0.15</radius>
+                        <length>3.0</length>
+                    </cylinder>
+                </geometry>
+            </collision>
+            <visual name="visual">
+                <geometry>
+                    <cylinder>
+                        <radius>0.15</radius>
+                        <length>3.0</length>
+                    </cylinder>
+                </geometry>
+                <material>
+                    <ambient>0 0 0 1</ambient>
+                    <diffuse>0 0 0 1</diffuse>
+                </material>
+            </visual>
+        </link>
+    </model>
+''')
+
+print('  </world>')
+print('</sdf>')
+EOF
