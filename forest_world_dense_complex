@@ -1,22 +1,26 @@
-python3 - << 'EOF' > forest_world.sdf
+python3 - << 'EOF' > forest_world_bright.sdf
 import random
 import math
 
+# ------------------------
 # CONFIG
+# ------------------------
 AREA_MIN = -15
 AREA_MAX = 15
-NUM_CLUSTERS = 8
-TREES_PER_CLUSTER = 8
-BUSHES_PER_CLUSTER = 6
 
-SAFE_ZONE = 2.5
+SAFE_ZONE = 1.5
 MIN_DIST = 0.6
+
+NUM_BACKGROUND_TREES = 70
+NUM_CLUSTERS = 6
+TREES_PER_CLUSTER = 6
+BUSHES_PER_CLUSTER = 4
 
 trees = []
 bushes = []
 
 # ------------------------
-# VALIDITY CHECK
+# SAFE ZONE
 # ------------------------
 def in_safe_zone(x, y):
     return abs(x) < SAFE_ZONE and abs(y) < SAFE_ZONE
@@ -24,26 +28,38 @@ def in_safe_zone(x, y):
 def valid_position(x, y, existing):
     if in_safe_zone(x, y):
         return False
-
     for px, py in existing:
         if math.hypot(x - px, y - py) < MIN_DIST:
             return False
     return True
 
 # ------------------------
-# GENERATE CLUSTERS
+# BACKGROUND TREES
 # ------------------------
-cluster_centers = []
-for _ in range(NUM_CLUSTERS):
+attempts = 0
+while len(trees) < NUM_BACKGROUND_TREES and attempts < 50000:
     x = random.uniform(AREA_MIN, AREA_MAX)
     y = random.uniform(AREA_MIN, AREA_MAX)
 
-    if not in_safe_zone(x, y):
-        cluster_centers.append((x, y))
+    if valid_position(x, y, trees):
+        trees.append((x, y))
+
+    attempts += 1
 
 # ------------------------
-# TREES (THICK + RANDOM)
+# CLUSTERS
 # ------------------------
+cluster_centers = []
+for _ in range(NUM_CLUSTERS):
+    for _ in range(50):
+        x = random.uniform(AREA_MIN, AREA_MAX)
+        y = random.uniform(AREA_MIN, AREA_MAX)
+
+        if not in_safe_zone(x, y):
+            cluster_centers.append((x, y))
+            break
+
+# Trees in clusters
 for cx, cy in cluster_centers:
     for _ in range(TREES_PER_CLUSTER):
         for _ in range(50):
@@ -54,9 +70,7 @@ for cx, cy in cluster_centers:
                 trees.append((x, y))
                 break
 
-# ------------------------
-# BUSHES (CLUTTER BLOBS)
-# ------------------------
+# Bushes
 for cx, cy in cluster_centers:
     for _ in range(BUSHES_PER_CLUSTER):
         for _ in range(50):
@@ -72,7 +86,7 @@ for cx, cy in cluster_centers:
 # ------------------------
 print('<?xml version="1.0" encoding="UTF-8"?>')
 print('<sdf version="1.9">')
-print('  <world name="forest_world">')
+print('  <world name="forest_world_bright">')
 
 print(f'<!-- Trees: {len(trees)}, Bushes: {len(bushes)} -->')
 
@@ -85,10 +99,8 @@ print('''
 
     <gravity>0 0 -9.8</gravity>
 
-    <!-- REQUIRED FOR PX4 -->
     <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
 
-    <!-- REQUIRED FOR GPS / EKF -->
     <spherical_coordinates>
         <surface_model>EARTH_WGS84</surface_model>
         <world_frame_orientation>ENU</world_frame_orientation>
@@ -97,13 +109,25 @@ print('''
         <elevation>0</elevation>
     </spherical_coordinates>
 
+    <!-- BRIGHT SCENE -->
     <scene>
-        <ambient>0.5 0.5 0.5 1</ambient>
+        <ambient>0.9 0.9 0.9 1</ambient>
         <background>0.7 0.85 1.0 1</background>
+        <shadows>false</shadows>
     </scene>
+
+    <!-- SUN LIGHT -->
+    <light name="sun" type="directional">
+        <pose>0 0 500 0 0 0</pose>
+        <cast_shadows>false</cast_shadows>
+        <intensity>1.5</intensity>
+        <direction>-0.5 0.5 -1</direction>
+    </light>
 ''')
 
-# Ground
+# ------------------------
+# GROUND (WHITE)
+# ------------------------
 print('''
     <model name="ground_plane">
         <static>true</static>
@@ -116,16 +140,29 @@ print('''
                     </plane>
                 </geometry>
             </collision>
+            <visual name="visual">
+                <geometry>
+                    <plane>
+                        <normal>0 0 1</normal>
+                        <size>200 200</size>
+                    </plane>
+                </geometry>
+                <material>
+                    <ambient>0.9 0.9 0.9 1</ambient>
+                    <diffuse>0.95 0.95 0.95 1</diffuse>
+                    <specular>0.1 0.1 0.1 1</specular>
+                </material>
+            </visual>
         </link>
     </model>
 ''')
 
 # ------------------------
-# TREES (CYLINDERS)
+# TREES
 # ------------------------
 for i, (x, y) in enumerate(trees):
-    radius = random.uniform(0.2, 0.5)
-    height = random.uniform(4.0, 8.0)
+    radius = random.uniform(0.25, 0.5)
+    height = random.uniform(4.0, 7.0)
 
     print(f'''
     <model name="tree_{i}">
@@ -157,12 +194,12 @@ for i, (x, y) in enumerate(trees):
 ''')
 
 # ------------------------
-# BUSHES (BOX CLUTTER)
+# BUSHES
 # ------------------------
 for i, (x, y) in enumerate(bushes):
-    sx = random.uniform(0.5, 2.0)
-    sy = random.uniform(0.5, 2.0)
-    sz = random.uniform(0.5, 1.5)
+    sx = random.uniform(0.6, 1.8)
+    sy = random.uniform(0.6, 1.8)
+    sz = random.uniform(0.5, 1.2)
 
     print(f'''
     <model name="bush_{i}">
