@@ -1,4 +1,4 @@
-python3 - << 'EOF' > box_world.sdf
+python3 - << 'EOF' > one_box_world.sdf
 import random
 
 # CONFIG
